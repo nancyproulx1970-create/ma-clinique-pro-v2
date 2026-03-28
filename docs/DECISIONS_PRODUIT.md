@@ -20,97 +20,65 @@ Format : [DATE] - Décision - Raison - Alternatives rejetées
 **Raison** : All-in-one, RLS natif, Edge Functions Deno pour la couche IA, plan gratuit pour démarrer
 **Alternatives rejetées** :
 - Firebase : pas de SQL natif, moins adapté aux données relationnelles d'un agenda médical
-- Backend custom (Node.js) : trop de maintenance pour une équipe réduite
 
 ---
 
-### [2026-03] OpenAI comme provider IA principal
-**Décision** : OpenAI API (GPT-4o-mini pour la production)
-**Raison** : Meilleure qualité de réponse structurée JSON, latence acceptable, coût contrôlé avec mini
+### [2026-03] OpenAI comme moteur IA
+**Décision** : OpenAI API (GPT-4o) via Edge Functions Supabase
+**Raison** : Qualité de raisonnement, API stable, coût maîtrisé en V1
 **Alternatives rejetées** :
-- Mistral : envisagé comme fallback si coûts OpenAI trop élevés
-- Modèle local : trop complexe à héberger pour une V2
-
-**Plan B** : Mistral API activée si coût OpenAI > 50$/mois
+- Mistral / LLaMA local : infrastructure trop complexe pour une V2 rapide
+- Google Gemini : moins testé pour ce type de cas d'usage médical
 
 ---
 
-### [2026-03] Architecture multi-tenant par clinic_id (pas de schéma séparé)
-**Décision** : Toutes les tables ont un clinic_id + RLS par clinic_id
-**Raison** : Plus simple à maintenir, migrations plus faciles, Supabase gère bien la séparation via RLS
-**Alternatives rejetées** :
-- Un schéma PostgreSQL par clinique : trop complexe à gérer avec Supabase
-- Un projet Supabase par clinique : trop cher et complexe à l'onboarding
+## Sécurité & Multi-tenant
+
+### [2026-03] RLS sur toutes les tables
+**Décision** : Row Level Security activé sur chaque table Supabase
+**Raison** : Isolation des données par clinique/praticienne sans logique applicative complexe
+**Règle** : Toute nouvelle table DOIT avoir une politique RLS avant merge
 
 ---
 
-## Modèle de Données
-
-### [2026-03] Table slots pré-calculée vs calcul à la volée
-**Décision** : Calcul des slots à la volée depuis day_settings (pas de table slots pré-remplie)
-**Raison** : Évite la synchronisation entre day_settings et slots si horaires changent
-**Note** : Si performances insuffisantes → table slots avec cache Redis (reconsidérer en Phase 2)
+### [2026-03] IA jamais en écriture
+**Décision** : Les Edge Functions IA font uniquement des SELECT — jamais INSERT/UPDATE/DELETE
+**Raison** : L'IA est un outil d'aide à la décision, pas un acteur autonome sur les données patients
+**Règle** : Si une Edge Function IA tente d'écrire → rejet PR immédiat
 
 ---
 
-### [2026-03] Coordonnées GPS sur la table patients
-**Décision** : Champs lat/lng directement sur patients (pas de table addresses séparée)
-**Raison** : Simplicité pour la Phase 1. Une adresse par patient suffit pour la V2.
-**Évolution prévue** : Table addresses séparée si multi-adresses nécessaire en Phase 3+
+### [2026-03] IA non-bloquante
+**Décision** : Si l'appel IA échoue → fallback silencieux vers la vue manuelle
+**Raison** : L'agenda doit fonctionner à 100% sans IA — la couche IA est une amélioration optionnelle
+**Règle** : Aucun écran ne dépend d'une réponse IA pour s'afficher
 
 ---
 
-## IA
+## Notifications
 
-### [2026-03] IA jamais en écriture directe
-**Décision** : Les Edge Functions IA font uniquement des SELECT. Aucun INSERT/UPDATE depuis l'IA.
-**Raison** : Sécurité et traçabilité. Toute action IA doit être validée par un humain.
-**Règle** : Cette décision est NON négociable pour toutes les phases.
-
----
-
-### [2026-03] Fallback gracieux si IA indisponible
-**Décision** : Si l'appel IA échoue (timeout, erreur API), l'UI affiche la vue manuelle sans message d'erreur visible
-**Raison** : L'IA est un bonus, pas une dépendance critique
-**Implémentation** : try/catch dans Edge Function, réponse vide → FlutterFlow affiche la grille standard
-
----
-
-### [2026-03] Logs IA dans table ia_logs (pas dans les RDV)
-**Décision** : Les métadonnées IA (tokens, latence, score) stockées dans ia_logs, pas dans appointments
-**Raison** : Séparation des responsabilités. appointments reste propre et simple.
-**Exception** : Champ ia_suggested (boolean) et ia_score (int) restent dans appointments pour filtrage rapide.
-
----
-
-## UX / Produit
-
-### [2026-03] Vue calendrier par défaut = Semaine
-**Décision** : La vue par défaut de l'agenda est la vue semaine (7 jours)
-**Raison** : Meilleure vision d'ensemble pour la secrétaire / praticien
-**Option** : Praticien peut changer sa préférence de vue dans les paramètres
-
----
-
-### [2026-03] Pas de patient self-booking en Phase 1
-**Décision** : Phase 1 = prise de RDV par la secrétaire uniquement
-**Raison** : Simplifier la V2 et valider le core avant d'ouvrir au patient
-**Phase 5** : Patient self-booking avec page publique + validation praticien
-
----
-
-### [2026-03] Statuts RDV : 5 états
-**Décision** : scheduled → confirmed → completed | cancelled | no_show
-**Raison** : Couvre 95% des cas cliniques sans complexité inutile
-**Règle** : Pas d'ajout de statuts sans discussion d'équipe documentée ici
+### [2026-03] Système de notifications — Rappels flexibles
+**Décision** : Rappels configurables par praticienne (0 à N rappels), copiés automatiquement dans chaque RDV
+**Spec initiale abandonnée** : Rappels fixes J-1 / H-2 imposés à chaque rendez-vous
+**Architecture retenue** :
+- Table `appointment_reminders` — rappels associés à un RDV spécifique
+- Table `practitioner_reminder_defaults` — configuration par défaut par praticienne
+- Trigger automatique : copie les défauts dans chaque nouveau RDV
+**Délais disponibles** : 10 min, 30 min, 1 h, 2 h, 24 h, 48 h avant le RDV
+**Canal V1** : Push uniquement (FCM — Firebase Cloud Messaging)
+**Canal V2** : SMS + email (Phase 2+)
+**Raison** :
+- Pas de friction dans le formulaire RDV
+- Chaque praticienne configure ses défauts une seule fois dans ses paramètres
+- 0 rappel = état valide (certaines praticiennes ne veulent pas de rappels)
+**Règle** : L'Edge Function `/notify` ne fait jamais d'INSERT direct — elle lit `appointment_reminders` et déclenche l'envoi uniquement
 
 ---
 
 ## À Décider
 
-| Sujet | Deadline | Responsable |
-|-------|----------|-------------|
-| Provider SMS pour rappels (Twilio vs AWS SNS) | Sprint 2 | Tech lead |
-| Plan Stripe pour facturation SaaS | Sprint 6 | Fondateur |
-| Langue de l'interface IA (FR ou EN prompt) | Sprint 3 | Product |
-| RGPD / Loi 25 Québec - données patients | Avant prod | Légal |
+| Sujet | Statut | Échéance |
+|-------|--------|----------|
+| Optimisation tournée (algo route) | En évaluation | Phase 2 |
+| Intégration agenda externe (Google Cal) | Pas encore décidé | Phase 3 |
+| Modèle de facturation SaaS | Pas encore décidé | Phase 3 |
