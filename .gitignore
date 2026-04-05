@@ -1,0 +1,54 @@
+# Secrets et variables d'environnement — NE JAMAIS COMMITTER
+.env
+.env.local
+.env.development
+.env.staging
+.env.production
+*.env
+
+# Supabase secrets
+supabase/.env
+supabase/functions/**/.env
+
+# Firebase config sensible
+google-services.json
+GoogleService-Info.plist
+firebase-adminsdk-*.json
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+*.g.dart
+*.freezed.dart
+pubspec.lock
+
+# FlutterFlow export
+.flutterflow/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Node
+node_modules/
+.npm
+
+# Deno (Edge Functions)
+.deno/
+
+# Clés API et tokens
+*.key
+*.pem
+*.p12
+*.pfx
+service-account*.json
