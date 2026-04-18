@@ -1,160 +1,149 @@
 # Supabase — Ma Clinique Pro V2
 
-> 🎯 **Supabase est la source de vérité cible du projet.** L'architecture finale est 100% Supabase (PostgreSQL + Auth + Storage + Realtime + Edge Functions). Firebase est un héritage temporaire en cours de migration. Voir `MIGRATION_FIREBASE.md` pour le plan détaillé.
->
-> ---
->
-> ## Projet Supabase
->
-> - **Project ID** : `anzgkxmxkcetzbjtjtuh`
-> - - **URL** : `https://anzgkxmxkcetzbjtjtuh.supabase.co`
->   - - **Région** : (à confirmer)
->     - - **Environnement actif** : Production (staging + dev à créer)
->      
->       - ---
->
-> ## Structure du dossier
->
-> ```
-> supabase/
-> ├── README.md                    ← Ce fichier — vue d'ensemble
-> ├── MIGRATION_FIREBASE.md        ← Plan de migration Firebase → Supabase (4 étapes)
-> ├── migrations/                  ← Scripts SQL de migration (à créer)
-> │   ├── 001_create_clinics.sql
-> │   ├── 002_create_practitioners.sql
-> │   ├── 003_create_patients.sql
-> │   ├── 004_create_rendez_vous.sql
-> │   ├── 005_create_photos.sql
-> │   ├── 006_create_day_settings.sql
-> │   ├── 007_create_reminders.sql
-> │   └── 008_rls_policies.sql
-> └── functions/                   ← Edge Functions Deno (à créer / versionner)
->     ├── create-agenda-entry/     ← ✅ Déployée
->     ├── suggerer-creneaux/       ← ✅ Déployée
->     ├── generate-note/           ← 📋 À créer (sécuriser OpenAI)
->     ├── optimize-route/          ← 📋 À créer (Phase 3)
->     └── notify/                  ← 📋 À créer (Phase 2)
-> ```
->
-> ---
->
-> ## Fonctions RPC actuellement déployées
->
-> ### `create_agenda_entry` ✅
-> Crée une entrée RDV avec validation JWT.
->
-> **Endpoint** : `POST /rest/v1/rpc/create_agenda_entry`
->
-> **Headers** :
-> ```
-> apikey: <SUPABASE_ANON_KEY>
-> Content-Type: application/json
-> Authorization: Bearer <userJWT>
-> ```
->
-> **Paramètres** :
-> ```json
-> {
->   "p_patient_Id": "<string>",
->   "p_nom_patient": "<string>",
->   "p_date": "<string>",
->   "p_heure_debut": "<string>",
->   "p_duree": 45,
->   "p_type_soin": "<string>",
->   "p_prix": 85.00,
->   "p_notes_additionnelles": "<string>",
->   "userJWT": "<string>",
->   "p_owner_id": "<string>"
-> }
-> ```
->
-> ---
->
-> ### `suggerer_creneaux` ✅
-> Suggère des créneaux optimaux en tenant compte de la ville du patient.
->
-> **Endpoint** : `POST /rest/v1/rpc/suggerer_creneaux`
->
-> **Paramètres** :
-> ```json
-> {
->   "p_owner_id": "<string>",
->   "p_date": "<string>",
->   "p_duree_minutes": 45,
->   "p_ville_patient": "<string>"
-> }
-> ```
->
-> **Retour** : `List<Json>` — `[{ date, heure, raison }]`
->
-> ---
->
-> ## Edge Functions à créer (cible)
->
-> ### `/generate-note` 📋
-> Proxy sécurisé vers OpenAI — remplacera l'appel direct depuis FlutterFlow.
-> - Input : `noteUtilisateur` (texte / dictée vocale)
-> - - Output : note clinique structurée (observations, actes, recommandations)
->   - - Sécurité : clé OpenAI côté serveur uniquement
->    
->     - ### `/optimize-route` 📋
->     - Optimisation de tournée à domicile.
->     - - Input : liste de patients avec adresses + ancres (domicile, stérilisation)
->       - - Output : ordre optimal des visites + itinéraire
->         - - Dépendance : Google Maps API
->          
->           - ### `/notify` 📋
->           - Envoi de notifications push / SMS / email.
->           - - Input : rendez_vous_id, channel, message
->             - - Output : confirmation d'envoi
->               - - Dépendance : Firebase Cloud Messaging (V1), Twilio (V2)
->                
->                 - ---
->
-> ## Architecture cible PostgreSQL
->
-> Tables à créer dans l'ordre (voir `MIGRATION_FIREBASE.md` pour le SQL complet) :
->
-> 1. `clinics` — cliniques (multi-tenant)
-> 2. 2. `practitioners` — profils praticiens / infirmières
->    3. 3. `patients` — dossiers patients
->       4. 4. `rendez_vous` — soins et agenda
->          5. 5. `photos` — photos de soins avec métadonnées podologiques
->             6. 6. `day_settings` — paramètres journée par praticienne
->                7. 7. `service_types` — types de soins
->                   8. 8. `appointment_reminders` — rappels configurables
->                      9. 9. `practitioner_reminder_defaults` — configuration rappels par défaut
->                        
->                         10. **RLS activé sur toutes les tables** — isolation par `owner_id` et `clinic_id`.
->                        
->                         11. ---
->                        
->                         12. ## Variables d'environnement
->
-> Créer un fichier `.env.local` (jamais committer — protégé par `.gitignore`) :
->
-> ```env
-> SUPABASE_URL=https://anzgkxmxkcetzbjtjtuh.supabase.co
-> SUPABASE_ANON_KEY=<votre_anon_key>
-> SUPABASE_SERVICE_KEY=<votre_service_key>
-> OPENAI_API_KEY=sk-...
-> GOOGLE_MAPS_API_KEY=...
-> FCM_SERVER_KEY=...
-> ```
->
-> Déployer les secrets sur Supabase :
-> ```bash
-> supabase secrets set OPENAI_API_KEY=sk-...
-> supabase secrets set GOOGLE_MAPS_API_KEY=...
-> supabase secrets set FCM_SERVER_KEY=...
-> ```
->
-> ---
->
-> ## Prochaines actions prioritaires
->
-> - [ ] **🔴 URGENT** : Créer l'Edge Function `/generate-note` (sécuriser la clé OpenAI)
-> - [ ] - [ ] **🔴 URGENT** : Créer le schéma SQL complet dans `migrations/`
-> - [ ] - [ ] Créer le projet Supabase staging (tests migration)
-> - [ ] - [ ] Exporter les données Firebase pour migration
-> - [ ] - [ ] Versionner le code source des fonctions RPC existantes
+Supabase est la base de données principale du projet (PostgreSQL 17).
+Firebase est en cours d'abandon progressif.
+
+---
+
+## Projet
+
+| Champ | Valeur |
+|-------|--------|
+| **Project ID** | `anzgkxmxkcetzbtjttuh` |
+| **URL** | `https://anzgkxmxkcetzbtjttuh.supabase.co` |
+| **Région** | `ca-central-1` (Canada) |
+| **PostgreSQL** | 17.6 |
+| **Environnement** | Production (unique — staging à créer) |
+
+---
+
+## Structure du dossier
+
+```
+supabase/
+├── config.toml                  ← Configuration Supabase CLI (local dev)
+├── README.md                    ← Ce fichier
+├── MIGRATION_FIREBASE.md        ← Plan de migration Firebase → Supabase
+├── GUIDE_SETUP_STAGING.md       ← Guide création environnement staging
+├── migrations/                  ← Scripts SQL versionnés (appliqués via CLI ou CI)
+│   ├── 20260406100001_fix_dossier_clinique_patient_id_zero.sql
+│   ├── 20260406100002_add_fk_constraints.sql
+│   ├── 20260406100003_drop_buggy_overlap_trigger.sql
+│   └── 20260406100004_add_updated_at.sql
+└── functions/
+    └── generate-note/           ← Edge Function — génération de notes cliniques IA
+        ├── index.ts
+        └── README.md
+```
+
+> Les 30 migrations précédentes existent dans l'historique Supabase mais pas
+> dans ce repo (créées avant l'initialisation du versionnement local).
+> Les nouvelles migrations vont ici à partir de `20260406*`.
+
+---
+
+## Schéma actuel (tables publiques)
+
+| Table | Lignes | Description |
+|-------|--------|-------------|
+| `Patients` | 9 | Dossiers patients (démographie + prescription) |
+| `Agenda` | 20 | Rendez-vous planifiés |
+| `Dossier_Clinique` | 6 | Notes SOAP par visite |
+| `Photos_Soins` | 0 | Photos de soins podologiques |
+| `profils_professionnels` | 2 | Profils praticiens |
+| `Parametres_Agenda` | 1 | Horaires et préférences par praticienne |
+| `Zones_Geographiques` | 6 | Zones de tournée à domicile |
+| `Jours_Bloques` | 2 | Plages de congé / indisponibilité |
+| `Lexique_Clinique` | 5 | Glossaire clinique personnalisé |
+| `Soins` | 0 | Soins facturés |
+| `Recus_Officiels` | 0 | Reçus avec taxes QC (TPS/TVQ) |
+| `Finances` | 0 | Transactions financières |
+| `Depenses` | 0 | Dépenses professionnelles |
+| `Registre_Kilometrage` | 0 | Journal kilométrique |
+| `Inventaire` | 0 | Stock produits |
+| `ia_logs` | 10 | Logs d'utilisation IA (tokens, durée, statut) |
+
+---
+
+## Fonctions RPC
+
+| Fonction | Sécurité | Description |
+|----------|----------|-------------|
+| `create_agenda_entry` | SECURITY DEFINER | Crée un RDV depuis FlutterFlow |
+| `suggerer_creneaux` | SECURITY DEFINER | Suggère des créneaux disponibles par ville |
+| `profil_est_complet` | SECURITY DEFINER | Vérifie si le profil praticienne est complet |
+| `upsert_profil` | SECURITY DEFINER | Crée ou met à jour le profil praticienne |
+| `handle_new_user_profile` | SECURITY DEFINER | Trigger auth → création profil auto au signup |
+
+---
+
+## Edge Functions déployées
+
+| Fonction | Endpoint | Description |
+|----------|----------|-------------|
+| `generate-note` | `/functions/v1/generate-note` | Génération note clinique via OpenAI GPT-4o-mini |
+
+---
+
+## Setup local (développement)
+
+### Prérequis
+```bash
+npm install -g supabase
+supabase --version  # doit afficher >= 1.x
+```
+
+### Lier le projet
+```bash
+supabase login
+supabase link --project-ref anzgkxmxkcetzbtjttuh
+```
+
+### Appliquer les migrations
+```bash
+# Appliquer toutes les migrations en attente sur la base liée
+supabase db push
+
+# Voir l'état des migrations
+supabase migration list
+```
+
+### Déployer une Edge Function
+```bash
+supabase functions deploy generate-note
+```
+
+### Gérer les secrets (Edge Functions)
+```bash
+supabase secrets set OPENAI_API_KEY=sk-...
+supabase secrets list
+```
+
+---
+
+## Variables d'environnement requises
+
+Voir `.env.example` à la racine du projet.
+
+| Variable | Utilisée par | Obligatoire |
+|----------|-------------|-------------|
+| `SUPABASE_URL` | FlutterFlow, CLI | Oui |
+| `SUPABASE_ANON_KEY` | FlutterFlow | Oui |
+| `SUPABASE_SERVICE_ROLE_KEY` | Scripts migration, admin | Oui |
+| `OPENAI_API_KEY` | Edge Function `generate-note` | Oui |
+| `GOOGLE_MAPS_API_KEY` | Phase 3 (tournées) | Non (futur) |
+
+---
+
+## CI/CD
+
+Le fichier `.github/workflows/supabase-migrations.yml` automatise :
+- **Pull Request** → dry-run des migrations en local
+- **Push sur `main`** → application des migrations + déploiement Edge Functions
+
+Secrets GitHub Actions à configurer :
+- `SUPABASE_ACCESS_TOKEN` — token personnel Supabase
+- `SUPABASE_DB_PASSWORD` — mot de passe base de données
+
+Variable GitHub Actions :
+- `SUPABASE_PROJECT_REF` = `anzgkxmxkcetzbtjttuh`
