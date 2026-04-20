@@ -11,10 +11,7 @@ import 'package:flutter/material.dart';
 // DO NOT REMOVE OR MODIFY THE CODE ABOVE!
 
 import 'package:signature/signature.dart';
-
-class SignatureCanvasController {
-  static SignatureController? instance;
-}
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SignatureCanvas extends StatefulWidget {
   const SignatureCanvas({
@@ -24,6 +21,9 @@ class SignatureCanvas extends StatefulWidget {
     this.penColor,
     this.backgroundColor,
     this.existingSignatureUrl,
+    this.userId,
+    this.triggerExport,
+    this.triggerClear,
   });
 
   final double? width;
@@ -31,6 +31,9 @@ class SignatureCanvas extends StatefulWidget {
   final Color? penColor;
   final Color? backgroundColor;
   final String? existingSignatureUrl;
+  final String? userId;
+  final bool? triggerExport;
+  final bool? triggerClear;
 
   @override
   State<SignatureCanvas> createState() => _SignatureCanvasState();
@@ -40,17 +43,17 @@ class _SignatureCanvasState extends State<SignatureCanvas> {
   late SignatureController _controller;
   bool _isEditing = false;
   bool _showExisting = false;
+  bool _isUploading = false;
 
   @override
   void initState() {
     super.initState();
     _controller = SignatureController(
-      penStrokeWidth: 2.5,
+      penStrokeWidth: 3.0,
       penColor: widget.penColor ?? Colors.black,
       exportBackgroundColor: widget.backgroundColor ?? Colors.white,
       exportPenColor: widget.penColor ?? Colors.black,
     );
-    SignatureCanvasController.instance = _controller;
     _showExisting = widget.existingSignatureUrl != null &&
         widget.existingSignatureUrl!.isNotEmpty;
   }
@@ -58,6 +61,19 @@ class _SignatureCanvasState extends State<SignatureCanvas> {
   @override
   void didUpdateWidget(covariant SignatureCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    if (widget.triggerExport == true && oldWidget.triggerExport != true) {
+      _handleExport();
+    }
+
+    if (widget.triggerClear == true && oldWidget.triggerClear != true) {
+      _controller.clear();
+      setState(() {
+        _isEditing = true;
+        _showExisting = false;
+      });
+    }
+
     if (widget.existingSignatureUrl != oldWidget.existingSignatureUrl) {
       setState(() {
         _showExisting = widget.existingSignatureUrl != null &&
@@ -69,11 +85,34 @@ class _SignatureCanvasState extends State<SignatureCanvas> {
 
   @override
   void dispose() {
-    if (SignatureCanvasController.instance == _controller) {
-      SignatureCanvasController.instance = null;
-    }
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleExport() async {
+    if (_controller.isEmpty || _isUploading) return;
+    if (widget.userId == null || widget.userId!.isEmpty) return;
+
+    setState(() => _isUploading = true);
+
+    try {
+      final bytes = await _controller.toPngBytes(
+        height: 400,
+        width: 1200,
+      );
+      if (bytes == null || bytes.isEmpty) return;
+
+      final path = '${widget.userId}/signature_pro.png';
+      await Supabase.instance.client.storage.from('signatures').uploadBinary(
+        path,
+        bytes,
+        fileOptions: const FileOptions(upsert: true, contentType: 'image/png'),
+      );
+    } catch (e) {
+      debugPrint('SignatureCanvas export error: $e');
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
   }
 
   void _switchToEditing() {
@@ -100,10 +139,22 @@ class _SignatureCanvasState extends State<SignatureCanvas> {
   @override
   Widget build(BuildContext context) {
     final bgColor = widget.backgroundColor ?? Colors.white;
-    final canvasWidth = widget.width ?? 380;
-    final canvasHeight = widget.height ?? 160;
+    final canvasWidth = widget.width ?? 600;
+    final canvasHeight = widget.height ?? 200;
 
-    // Mode 1: Show existing signature image
+    if (_isUploading) {
+      return Container(
+        width: canvasWidth,
+        height: canvasHeight,
+        decoration: BoxDecoration(
+          color: bgColor,
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (_showExisting) {
       return Container(
         width: canvasWidth,
@@ -163,7 +214,6 @@ class _SignatureCanvasState extends State<SignatureCanvas> {
       );
     }
 
-    // Mode 2: Canvas for drawing
     return Container(
       width: canvasWidth,
       height: canvasHeight,
