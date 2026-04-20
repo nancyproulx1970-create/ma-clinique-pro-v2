@@ -92,6 +92,11 @@ class _SignatureCanvasState extends State<SignatureCanvas> {
     setState(() => _isEditing = false);
   }
 
+  String _urlWithCacheBust(String url) {
+    final separator = url.contains('?') ? '&' : '?';
+    return '$url${separator}t=${DateTime.now().millisecondsSinceEpoch}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final bgColor = widget.backgroundColor ?? Colors.white;
@@ -113,7 +118,7 @@ class _SignatureCanvasState extends State<SignatureCanvas> {
             ClipRRect(
               borderRadius: BorderRadius.circular(7),
               child: Image.network(
-                widget.existingSignatureUrl!,
+                _urlWithCacheBust(widget.existingSignatureUrl!),
                 width: canvasWidth,
                 height: canvasHeight,
                 fit: BoxFit.contain,
